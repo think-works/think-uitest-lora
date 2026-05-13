@@ -4,3 +4,4 @@ venv/
 think-moss-server/
 exports/
 data/
+__pycache__/
