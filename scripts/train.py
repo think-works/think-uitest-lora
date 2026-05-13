@@ -295,6 +295,8 @@ def main():
     if quantization_config is not None:
         model = prepare_model_for_kbit_training(model)
 
+    model.enable_input_require_grads()
+
     target_modules = ["q_proj", "k_proj", "v_proj", "o_proj"]
     if args.lora_targets == "all":
         target_modules += ["gate_proj", "up_proj", "down_proj"]
@@ -341,7 +343,7 @@ def main():
         "metric_for_best_model": "eval_loss" if args.eval_loss else None,
         "greater_is_better": False if args.eval_loss else None,
         "gradient_checkpointing": not args.no_gradient_checkpointing,
-        "gradient_checkpointing_kwargs": {"use_reentrant": False},
+        "gradient_checkpointing_kwargs": {"use_reentrant": True},
         "report_to": "none",
         "remove_unused_columns": False,
         "dataloader_pin_memory": False,
