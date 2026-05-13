@@ -1,0 +1,6 @@
+*.tar.gz
+backup/
+venv/
+think-moss-server/
+exports/
+data/
