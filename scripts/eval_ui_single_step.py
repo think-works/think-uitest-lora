@@ -45,11 +45,9 @@ def parse_actions(text: str) -> list[dict] | None:
     if "actions" in obj:
         return obj["actions"]
     if "action" in obj:
-        action_fields = {}
-        for key in ("action", "element_index", "desc", "text", "direction",
-                     "seconds", "app", "url", "reason", "tab_index", "command", "value"):
-            if key in obj:
-                action_fields[key] = obj[key]
+        # Flat action at top level — collect all fields except meta keys
+        meta_keys = {"thinking", "actions"}
+        action_fields = {k: v for k, v in obj.items() if k not in meta_keys}
         return [action_fields]
     return None
 
