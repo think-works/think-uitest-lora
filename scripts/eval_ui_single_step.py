@@ -145,18 +145,24 @@ def prepare_inputs(item, processor, system_prompts, img_dir, device):
     return inputs, gt_actions
 
 
+def _log(msg: str):
+    import sys
+    print(msg, flush=True, file=sys.stderr if sys.stderr.isatty() else sys.stdout)
+
+
 def run_eval(model_path: str, use_4bit: bool = True, limit: int | None = None,
-             max_pixels: int | None = None):
-    print(f"Loading model from: {model_path}")
+             max_pixels: int | None = None, merge_lora: bool = False):
+    _log(f"[1/7] Loading model from: {model_path}")
     adapter_config = Path(model_path) / "adapter_config.json"
     is_adapter = adapter_config.exists()
     base_model_path = DEFAULT_MODEL
     if is_adapter:
         with open(adapter_config, encoding="utf-8") as f:
             base_model_path = json.load(f).get("base_model_name_or_path") or DEFAULT_MODEL
-        print(f"Detected LoRA adapter. Base model: {base_model_path}")
+        _log(f"Detected LoRA adapter. Base model: {base_model_path}")
     load_path = base_model_path if is_adapter else model_path
 
+    _log("[2/7] Loading base model weights ...")
     if use_4bit:
         bnb_config = BitsAndBytesConfig(
             load_in_4bit=True,
@@ -178,22 +184,36 @@ def run_eval(model_path: str, use_4bit: bool = True, limit: int | None = None,
             device_map="auto",
             trust_remote_code=True,
         )
+    _log("[2/7] Base model loaded.")
 
     if is_adapter:
-        model = PeftModel.from_pretrained(model, model_path)
+        if merge_lora:
+            _log("[3/7] Merging LoRA adapter into base model ...")
+            from peft import PeftModel as _PeftModel
+            model = _PeftModel.from_pretrained(model, model_path)
+            model = model.merge_and_unload()
+            _log("[3/7] LoRA merged and unloaded.")
+        else:
+            _log("[3/7] Loading LoRA adapter (use --merge_lora if this hangs) ...")
+            model = PeftModel.from_pretrained(model, model_path)
+            _log("[3/7] LoRA adapter loaded.")
         model.eval()
 
+    _log("[4/7] Loading processor ...")
     processor = AutoProcessor.from_pretrained(
         model_path if not is_adapter else load_path,
         trust_remote_code=True,
     )
     if max_pixels is not None:
         processor.image_processor.size["longest_edge"] = max_pixels
+    _log("[4/7] Processor loaded.")
 
+    _log("[5/7] Loading eval data ...")
     system_prompts = load_system_prompts()
     eval_data = load_eval_data()
     if limit is not None and limit > 0:
         eval_data = eval_data[:limit]
+    _log(f"[5/7] Loaded {len(eval_data)} eval samples.")
     img_dir = DATA_DIR / "images"
     device = model.device
 
@@ -239,7 +259,7 @@ def run_eval(model_path: str, use_4bit: bool = True, limit: int | None = None,
             correct += 1
 
         for a in gt_actions:
-            action_type = a.get("action", "unknown")
+            action_type = str(a.get("action", "unknown"))
             action_type_stats[action_type] += 1
             if is_correct:
                 action_type_correct[action_type] += 1
@@ -267,23 +287,8 @@ def run_eval(model_path: str, use_4bit: bool = True, limit: int | None = None,
     parse_rate = (total - parse_fail) / total if total > 0 else 0
 
     total_time = time.time() - start_time
-    print(f"\n{'='*60}")
-    print(f"Results:")
-    print(f"  Total samples:  {total}")
-    print(f"  Correct:        {correct}")
-    print(f"  Parse failed:   {parse_fail}")
-    print(f"  Accuracy:       {accuracy:.2%}")
-    print(f"  Parse rate:     {parse_rate:.2%}")
-    print(f"  Total time:     {total_time:.1f}s")
-    if total > 0:
-        print(f"  Avg time:       {total_time/total:.1f}s/sample")
-    print(f"\n  Accuracy by action type:")
-    for action_type in sorted(action_type_stats.keys()):
-        cnt = action_type_stats[action_type]
-        acc = action_type_correct[action_type] / cnt if cnt > 0 else 0
-        print(f"    {action_type}: {action_type_correct[action_type]}/{cnt} ({acc:.2%})")
-    print(f"{'='*60}")
 
+    # Save results first so the file is written even if printing crashes
     timestamp = time.strftime("%Y%m%d_%H%M%S")
     result_path = DATA_DIR / f"eval_results_{timestamp}.json"
     with open(result_path, "w") as f:
@@ -299,6 +304,24 @@ def run_eval(model_path: str, use_4bit: bool = True, limit: int | None = None,
         }, f, ensure_ascii=False, indent=2)
 
     print(f"Detailed results saved to: {result_path}")
+
+    print(f"\n{'='*60}")
+    print(f"Results:")
+    print(f"  Total samples:  {total}")
+    print(f"  Correct:        {correct}")
+    print(f"  Parse failed:   {parse_fail}")
+    print(f"  Accuracy:       {accuracy:.2%}")
+    print(f"  Parse rate:     {parse_rate:.2%}")
+    print(f"  Total time:     {total_time:.1f}s")
+    if total > 0:
+        print(f"  Avg time:       {total_time/total:.1f}s/sample")
+    print(f"\n  Accuracy by action type:")
+    for action_type in sorted(action_type_stats.keys(), key=str):
+        cnt = action_type_stats[action_type]
+        acc = action_type_correct[action_type] / cnt if cnt > 0 else 0
+        print(f"    {action_type}: {action_type_correct[action_type]}/{cnt} ({acc:.2%})")
+    print(f"{'='*60}")
+
     return accuracy
 
 
