@@ -288,7 +288,8 @@ def run_eval(model_path: str, use_4bit: bool = True, limit: int | None = None,
 
         elapsed = time.time() - start_time
         status = "✓" if is_correct else "✗"
-        print(f"  [{total}/{eval_len}] {status} GT={json.dumps(gt_actions, ensure_ascii=False)[:80]} "
+        print(f"  [{total}/{eval_len}] {status} {new_tokens}tok "
+              f"GT={json.dumps(gt_actions, ensure_ascii=False)[:80]} "
               f"Pred={json.dumps(pred_actions, ensure_ascii=False)[:80] if pred_actions else 'PARSE_FAIL'} "
               f"({elapsed:.1f}s, avg {elapsed/total:.1f}s/sample)")
 
