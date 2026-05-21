@@ -52,8 +52,16 @@ def parse_actions(text: str) -> list[dict] | None:
     return None
 
 
-def compare_actions(pred: list[dict], gt: list[dict]) -> bool:
-    """比较两个 actions 列表，忽略 desc 字段。"""
+def compare_actions(pred: list[dict], gt: list[dict], accepted_actions: list | None = None) -> bool:
+    """比较 pred 与 gt（及可选的 accepted_actions），忽略 desc 字段。"""
+    if accepted_actions:
+        for accepted in accepted_actions:
+            if _actions_match(pred, accepted):
+                return True
+    return _actions_match(pred, gt)
+
+
+def _actions_match(pred: list[dict], gt: list[dict]) -> bool:
     if len(pred) != len(gt):
         return False
     for p, g in zip(pred, gt):
@@ -248,12 +256,13 @@ def run_eval(model_path: str, use_4bit: bool = True, limit: int | None = None,
         pred_actions = parse_actions(output_text)
 
         total += 1
+        accepted_actions = item.get("accepted_actions")
 
         if pred_actions is None:
             parse_fail += 1
             is_correct = False
         else:
-            is_correct = compare_actions(pred_actions, gt_actions)
+            is_correct = compare_actions(pred_actions, gt_actions, accepted_actions)
 
         if is_correct:
             correct += 1
